@@ -1,5 +1,10 @@
-#[derive(Copy, Clone)]
-pub enum Operation<T> where T: Copy + Clone {
+use crate::operations::rhs::RHS;
+
+mod display;
+pub(crate) mod rhs;
+
+#[derive(Clone)]
+pub enum Operation<T> where T: Copy + Clone + std::fmt::Display {
     None,
     BitwiseNot,
     BitwiseAnd(T),
@@ -12,19 +17,19 @@ pub enum Operation<T> where T: Copy + Clone {
     ArithmeticAdd(T)
 }
 
-#[derive(Copy, Clone)]
-pub struct Term<T> where T: Copy + Clone {
+#[derive(Clone)]
+pub struct Term<T, U> where T: Copy + Clone, U: Copy + Clone {
     pub initial_value: T,
-    pub operation: Operation<T>,
+    pub operation: Operation<U>,
     pub result: T
 }
 
 #[derive(Clone)]
-pub struct Expression<T> where T: Copy + Clone {
-    pub terms: Vec<Term<T>>
+pub struct Expression<T, U> where T: Copy + Clone, U: Copy + Clone {
+    pub terms: Vec<Term<T, U>>
 }
 
-impl<T> Term<T>
+impl<T, U> Term<T, U>
     where
         T: std::ops::BitAnd<Output = T> +
         std::ops::BitOr<Output = T> +
@@ -39,7 +44,9 @@ impl<T> Term<T>
         Copy +
         Clone +
         Default +
-        std::fmt::Display
+        std::fmt::Display +
+        RHS<T>,
+        U: Copy + Clone + RHS<T>
 {
     pub fn new(initial_value: T, operation: Operation<T>) -> Self {
         let mut term = Term {
@@ -70,19 +77,19 @@ impl<T> Term<T>
         self.result = match self.operation {
             Operation::None => self.initial_value,
             Operation::BitwiseNot => !self.initial_value,
-            Operation::BitwiseAnd(value) => self.initial_value & value,
-            Operation::BitwiseOr(value) => self.initial_value | value,
-            Operation::BitwiseXor(value) => self.initial_value ^ value,
-            Operation::BitwiseShiftLeft(value) => self.initial_value << value,
-            Operation::BitwiseShiftRight(value) => self.initial_value >> value,
+            Operation::BitwiseAnd(value) => self.initial_value & value.value(),
+            Operation::BitwiseOr(value) => self.initial_value | value.value(),
+            Operation::BitwiseXor(value) => self.initial_value ^ value.value(),
+            Operation::BitwiseShiftLeft(value) => self.initial_value << value.value(),
+            Operation::BitwiseShiftRight(value) => self.initial_value >> value.value(),
             Operation::LogicalNot => (self.initial_value == 0u8.into()).into(),
             Operation::LogicalNotNot => (self.initial_value != 0u8.into()).into(),
-            Operation::ArithmeticAdd(value) => self.initial_value + value
+            Operation::ArithmeticAdd(value) => self.initial_value + value.value()
         }
     }
 }
 
-impl<T> Expression<T>
+impl<T, U> Expression<T, U>
     where
         T: std::ops::BitAnd<Output = T> +
         std::ops::BitOr<Output = T> +
@@ -97,7 +104,9 @@ impl<T> Expression<T>
         Copy +
         Clone +
         Default +
-        std::fmt::Display
+        std::fmt::Display +
+        RHS<T>,
+        U: Copy + Clone + RHS<T>
 {
     pub fn new() -> Self {
         Expression { terms: Vec::new() }
@@ -124,12 +133,12 @@ impl<T> Expression<T>
         if self.is_empty() {
             return;
         }
-        let mut previous_term = self.terms[0];
+        let mut previous_term = self.terms[0].clone();
         previous_term.operate();
         for term in self.terms.iter_mut().skip(1) {
             term.initial_value = previous_term.result;
             term.operate();
-            previous_term = *term;
+            previous_term = term.clone();
         }
     }
 
@@ -137,13 +146,7 @@ impl<T> Expression<T>
         self.terms.is_empty()
     }
 
-    pub fn final_value(&self) -> T {
-        if let Some(term) = self.terms.last() {
-            term.result
-        } else {
-            T::default()
-        }
-    }
+
 
     pub fn add_operation(&mut self, operation: Operation<T>) {
         if self.is_empty() {
@@ -176,135 +179,14 @@ impl<T> Expression<T>
     }
 }
 
-impl<T> Expression<T>
-    where T: Copy + Default {
-
-}
-
-mod display {
-    use crate::operations::{Expression, Operation, Term};
-
-    fn format_value<T>(value: &T) -> String
-        where
-            T: std::fmt::LowerHex +
-            std::fmt::Binary +
-            std::fmt::Display +
-            Copy +
-            Clone
-    {
-        let bits = std::mem::size_of::<T>();
-        let dec_width = bits * 3 + 2;
-        let hex_width = bits * 2 + 2;
-        let bin_width = bits * 8 + 2;
-        // let total = bits * 13 + 14;
-        format!(
-            "[{:>dec_width$} | {:>hex_width$} | {:>bin_width$}]",
-            value,
-            format!("{:#x}", value),
-            format!("{:#b}", value)
-        )
-    }
-
-    impl<T> std::fmt::Display for Term<T>
-        where
-            T: std::fmt::Display +
-            std::fmt::Binary +
-            std::fmt::LowerHex +
-            Copy +
-            Clone
-    {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            let width = f.width().unwrap_or(0);
-            match self.operation {
-                Operation::None => {
-                    let width = width * 3 + 7;
-                    write!(
-                        f,
-                        "{:>width$}",
-                        format_value(&self.initial_value)
-                    )
-                },
-                Operation::BitwiseNot |
-                Operation::LogicalNot |
-                Operation::LogicalNotNot => {
-                    let width = width + 4;
-                    write!(
-                        f,
-                        "{:>width$}{} = {}",
-                        self.operation,
-                        format_value(&self.initial_value),
-                        format_value(&self.result)
-                    )
-                },
-                _ => {
-                    write!(
-                        f,
-                        "{} {:>width$} = {}",
-                        format_value(&self.initial_value),
-                        self.operation,
-                        format_value(&self.result)
-                    )
-                }
-            }
-        }
-    }
-
-    impl<T> std::fmt::Display for Operation<T>
-        where
-            T: std::fmt::Display +
-            std::fmt::Binary +
-            std::fmt::LowerHex +
-            Copy +
-            Clone
-    {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            let width = f.width().unwrap_or(0);
-            match self {
-                Operation::None => write!(f, ""),
-                Operation::BitwiseNot => write!(f, "{:>width$}", "~"),
-                Operation::BitwiseAnd(value) => write!(f, " & {}", format_value(value)),
-                Operation::BitwiseOr(value) => write!(f, " | {}", format_value(value)),
-                Operation::BitwiseXor(value) => write!(f, " ^ {}", format_value(value)),
-                Operation::BitwiseShiftLeft(value) => write!(f, "<< {:>width$}", value),
-                Operation::BitwiseShiftRight(value) => write!(f, ">> {:>width$}", value),
-                Operation::LogicalNot => write!(f, "{:>width$}", "!"),
-                Operation::LogicalNotNot => write!(f, "{:>width$}", "!!"),
-                Operation::ArithmeticAdd(value) => write!(f, " + {}", format_value(value))
-            }
-        }
-    }
-
-    impl<T> std::fmt::Display for Expression<T>
-        where
-            T: std::fmt::Display +
-            std::fmt::Binary +
-            std::fmt::LowerHex +
-            Copy +
-            Clone
-    {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            let width = std::mem::size_of::<T>() * 13 + 14;
-            for (i, term) in self.terms.iter().enumerate() {
-                writeln!(f, "{:>2}) {:>width$}", i, term)?;
-            }
-            Ok(())
+impl<T, U> Expression<T, U> where T: Copy + Clone + Default, U: Copy + Clone {
+    pub fn final_value(&self) -> T {
+        if let Some(term) = self.terms.last() {
+            term.result
+        } else {
+            T::default()
         }
     }
 }
 
-// std::ops::BitAnd<Output = T>
-// std::ops::BitOr<Output = T>
-// std::ops::BitXor<Output = T>
-// std::ops::Shl<Output = T>
-// std::ops::Shr<Output = T>
-// std::ops::Not<Output = T>
-// std::ops::Add<Output = T>
-// std::cmp::PartialEq
-// std::convert::From<u8> +
-// // std::convert::From<i8> +
-// std::convert::From<bool> +
-// std::fmt::Display + Copy + Default
 
-mod opsimpl {
-
-}

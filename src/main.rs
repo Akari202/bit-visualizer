@@ -19,7 +19,7 @@ fn main() {
     // println!("{}", expression.format_as_ops());
     // println!("{}", expression);
 
-    let mut is_power_2: Expression<i16> = Expression::new();
+    let mut is_power_2: Expression<i16, U> = Expression::new();
     is_power_2.set_initial_value(5);
     is_power_2.add_operation(Operation::ArithmeticAdd(-1));
     is_power_2.add_operation(Operation::BitwiseAnd(is_power_2.final_value()));
